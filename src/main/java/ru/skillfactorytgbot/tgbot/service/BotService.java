@@ -14,14 +14,22 @@ import ru.skillfactorytgbot.tgbot.entity.ActiveChat;
 import ru.skillfactorytgbot.tgbot.repository.ActiveChatRepository;
 
 import javax.annotation.PostConstruct;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Service //Данный класс является сервисом
 @Slf4j //Подключаем логирование из Lombok'a
 @RequiredArgsConstructor
 public class BotService extends TelegramLongPollingBot {
+    private static final String ADD_SPEND = "/addspend";
+    private static final String ADD_INCOME = "/addincome";
     private final CentralRussianBankService centralBankRussianService;
     public ActiveChatRepository activeChatRepository;
+    private Map<Long, List<String>> previousCommands = new ConcurrentHashMap<>();
+    public FinanceService financeService;
     @Value("${bot.api.key}") //Сюда будет вставлено значение из application.properties, в котором будет указан api key, полученный от BotFather
     private String apiKey;
 
@@ -30,6 +38,7 @@ public class BotService extends TelegramLongPollingBot {
     //Это основной метод, который связан с обработкой сообщений
     @Override
     public void onUpdateReceived(Update update) {
+
         Message message = update.getMessage(); //Этой строчкой мы получаем сообщение от пользователя
         try {
             SendMessage response = new SendMessage(); //Данный класс представляет собой реализацию команды отправки сообщения, которую за нас выполнит ранее подключенная библиотека
@@ -44,7 +53,15 @@ public class BotService extends TelegramLongPollingBot {
 //StringUtils.defaultBlank – это метод из библиотеки Apache Commons, который нам нужен для того, чтобы на первой итерации нашего цикла была вставлена пустая строка вместо null, а на следующих итерациях не перетерся текст, полученный из предыдущих итерации. Подключение библиотеки см. ниже
                     response.setText(StringUtils.defaultIfBlank(response.getText(), "") + valuteCursOnDate.getName() + " - " + valuteCursOnDate.getCourse() + "\n");
                 }
+            }else if (ADD_INCOME.equalsIgnoreCase(message.getText())) {
+                response.setText("Отправьте мне сумму полученного дохода");
+            } else if (ADD_SPEND.equalsIgnoreCase(message.getText())) {
+                response.setText("Отправьте мне сумму расходов");
+            } else {
+
+                response.setText(financeService.addFinanceOperation(getPreviousCommand(message.getChatId()), message.getText(), message.getChatId()));
             }
+            putPreviousCommand(message.getChatId(), message.getText());
             //Теперь мы сообщаем, что пора бы и ответ отправлять
             execute(response);
             //Проверяем, есть ли у нас такой chatId в базе, если нет, то добавляем, если есть, то пропускаем данный шаг
@@ -73,6 +90,20 @@ public class BotService extends TelegramLongPollingBot {
                 e.printStackTrace();
             }
         }
+    }
+    private void putPreviousCommand(Long chatId, String command) {
+        if (previousCommands.get(chatId) == null) {
+            List<String> commands = new ArrayList<>();
+            commands.add(command);
+            previousCommands.put(chatId, commands);
+        } else {
+            previousCommands.get(chatId).add(command);
+        }
+    }
+
+    private String getPreviousCommand(Long chatId) {
+        return previousCommands.get(chatId)
+                .get(previousCommands.get(chatId).size() - 1);
     }
 
     //Данный метод будет вызван сразу после того, как данный бин будет создан - это обеспечено аннотацией Spring PostConstruct
