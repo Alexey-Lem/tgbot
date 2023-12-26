@@ -24,12 +24,15 @@ import java.util.concurrent.ConcurrentHashMap;
 @Slf4j //Подключаем логирование из Lombok'a
 @RequiredArgsConstructor
 public class BotService extends TelegramLongPollingBot {
+    private static final String CURRENT_RATES = "/currentrates";
     private static final String ADD_SPEND = "/addspend";
     private static final String ADD_INCOME = "/addincome";
+    private final CentralRussianBankService centralRussianBankService;
+    private final FinanceService financeService;
+    private final ActiveChatRepository activeChatRepository;
     private final CentralRussianBankService centralBankRussianService;
-    public ActiveChatRepository activeChatRepository;
+
     private Map<Long, List<String>> previousCommands = new ConcurrentHashMap<>();
-    public FinanceService financeService;
     @Value("${bot.api.key}") //Сюда будет вставлено значение из application.properties, в котором будет указан api key, полученный от BotFather
     private String apiKey;
 
@@ -46,9 +49,9 @@ public class BotService extends TelegramLongPollingBot {
             response.setChatId(String.valueOf(chatId)); //Устанавливаем ID, полученный из предыдущего этап сюда, чтобы сообщить, в какой чат необходимо отправить сообщение
 
             //Тут начинается самое интересное - мы сравниваем, что прислал пользователь, и какие команды мы можем обработать. Пока что у нас только одна команда
-            if ("/currentrates".equalsIgnoreCase(message.getText())) {
+            if (CURRENT_RATES.equalsIgnoreCase(message.getText())) {
 //Получаем все курсы валют на текущий момент и проходимся по ним в цикле
-                for (ValuteCursOnDate valuteCursOnDate : centralBankRussianService.getCurrenciesFromCbr()) {
+                for (ValuteCursOnDate valuteCursOnDate : centralRussianBankService.getCurrenciesFromCbr()) {
 //В данной строчке мы собираем наше текстовое сообщение
 //StringUtils.defaultBlank – это метод из библиотеки Apache Commons, который нам нужен для того, чтобы на первой итерации нашего цикла была вставлена пустая строка вместо null, а на следующих итерациях не перетерся текст, полученный из предыдущих итерации. Подключение библиотеки см. ниже
                     response.setText(StringUtils.defaultIfBlank(response.getText(), "") + valuteCursOnDate.getName() + " - " + valuteCursOnDate.getCourse() + "\n");
@@ -76,7 +79,8 @@ public class BotService extends TelegramLongPollingBot {
         } catch (TelegramApiException e) {
             e.printStackTrace();
         } catch (Exception e) {
-            e.printStackTrace();
+//            e.printStackTrace();
+            log.error("Возникла неизвестная проблема, сообщите пожалуйста администратору", e);
         }
     }
     public void sendNotificationToAllActiveChats(String message, Set<Long> chatIds) {
@@ -87,7 +91,8 @@ public class BotService extends TelegramLongPollingBot {
             try {
                 execute(sendMessage);
             } catch (TelegramApiException e) {
-                e.printStackTrace();
+//                e.printStackTrace();
+                log.error("Не удалось отправить сообщение", e);
             }
         }
     }
